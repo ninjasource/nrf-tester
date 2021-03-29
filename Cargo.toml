@@ -1,0 +1,50 @@
+[package]
+name = "nrf-tester"
+version = "0.1.0"
+authors = ["David Haig <david@ninjametal.com>"]
+edition = "2018"
+
+[features]
+default = [
+    "defmt-default",
+    "ble-l2cap",
+    "ble-gatt-server",
+    "ble-gatt-client",
+]
+defmt-default = []
+defmt-trace = []
+defmt-debug = []
+defmt-info = []
+defmt-warn = []
+defmt-error = []
+
+ble-l2cap = ["nrf-softdevice/ble-l2cap"]
+ble-gatt-server = ["nrf-softdevice/ble-gatt-server"]
+ble-gatt-client = ["nrf-softdevice/ble-gatt-client"]
+
+[dependencies]
+embassy = { version = "0.1.0", features = ["defmt"]}
+embassy-traits = { version = "0.1.0", features = ["defmt"]}
+embassy-nrf = { version = "0.1.0", features = [ "defmt", "52840" ]}
+cortex-m = { version = "0.6.4" }
+cortex-m-rt = "0.6.13"
+cortex-m-rtic = { version = "0.5.5", optional = true }
+defmt = { version = "0.2.0", features = ["alloc"] }
+panic-probe = "0.1.0"
+nrf52840-hal    = { version = "0.12.0" }
+nrf-softdevice = { version = "0.1.0", features = ["defmt", "defmt-trace", "nrf52840", "s140", "ble-peripheral", "ble-central"]}
+nrf-softdevice-defmt-rtt = { version = "0.1.0" }
+nrf-softdevice-s140 = { version = "0.1.0" }
+futures = { version = "0.3.5", default-features = false }
+fixed = "1.2.0"
+heapless = "0.5.6"
+alloc-cortex-m = "0.4.0"
+
+[patch.crates-io]
+embassy = { git = "https://github.com/embassy-rs/embassy" }
+embassy-nrf = { git = "https://github.com/embassy-rs/embassy" }
+embassy-macros = { git = "https://github.com/embassy-rs/embassy" }
+embassy-traits = { git = "https://github.com/embassy-rs/embassy" }
+nrf-softdevice = { git = "https://github.com/embassy-rs/nrf-softdevice" }
+nrf-softdevice-defmt-rtt = { git = "https://github.com/embassy-rs/nrf-softdevice" }
+nrf-softdevice-s140 = { git = "https://github.com/embassy-rs/nrf-softdevice" }
