@@ -16,12 +16,15 @@ use embassy::executor::Executor;
 use embassy::time::{Duration, Timer};
 use embassy::util::Forever;
 use futures::pin_mut;
-use nrf_softdevice::ble::{gatt_server, peripheral};
+use nrf_softdevice::ble::{gatt_server, peripheral, TxPower};
 use nrf_softdevice::{raw, Softdevice};
 
 use embassy::interrupt::InterruptExt;
 use embassy::util::Steal;
-use embassy_nrf::{interrupt, peripherals, rtc};
+use embassy_nrf::{
+    interrupt, peripherals,
+    rtc::{self, Alarm},
+};
 
 static EXECUTOR: Forever<Executor> = Forever::new();
 
@@ -54,6 +57,7 @@ async fn run_bluetooth(sd: &'static Softdevice, server: &FooService) {
             adv_data,
             scan_data,
         };
+
         let conn = unwrap!(peripheral::advertise(sd, adv, &config).await);
 
         info!("advertising done!");
@@ -76,38 +80,60 @@ async fn run_bluetooth(sd: &'static Softdevice, server: &FooService) {
     }
 }
 
+async fn send_bluetooth_extended_advert(sd: &'static Softdevice) {
+    #[rustfmt::skip]
+    let adv_data = &[
+        0x02, 0x01, raw::BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE as u8,
+        0x03, 0x03, 0x09, 0x18,
+        0x0a, 0x09, b'H', b'e', b'l', b'l', b'o', b'F', b'o', b'o', b'o',
+    ];
+
+    let config = peripheral::Config {
+        max_events: Some(1), // only send one advert
+        tx_power: TxPower::Plus3dBm,
+        primary_phy: nrf_softdevice::ble::Phy::Coded, // can primary be coded? I thought it couldn't
+        secondary_phy: nrf_softdevice::ble::Phy::Coded,
+        ..Default::default()
+    };
+    let adv = peripheral::ConnectableAdvertisement::ExtendedNonscannableUndirected { adv_data };
+
+    info!("Sending extended advert");
+    let _ = peripheral::advertise(sd, adv, &config).await;
+    info!("Extended advert sent");
+}
+
+// this task performs normal connectable ble advertising interrupted by periodic
+// bouts of single event extended advertising
 #[embassy::task]
 async fn bluetooth_task(sd: &'static Softdevice) {
     let server: FooService = unwrap!(gatt_server::register(sd));
 
     loop {
-        info!("Bluetooth ON!");
+        info!("Sending standard connectible adverts");
+        {
+            let bluetooth_fut = run_bluetooth(sd, &server);
 
-        let bluetooth_fut = run_bluetooth(sd, &server);
+            let timer_fut = async {
+                Timer::after(Duration::from_secs(10)).await;
+                info!("Extended advertising timer has ticked");
+            };
 
-        let timer_fut = async {
-            info!("About to wait for timer");
-            Timer::after(Duration::from_ticks(64000)).await;
-            info!("Timer fired!");
-        };
+            pin_mut!(bluetooth_fut);
+            pin_mut!(timer_fut);
 
-        pin_mut!(bluetooth_fut);
-        pin_mut!(timer_fut);
+            // Select whichever future finishes first
+            futures::future::select(bluetooth_fut, timer_fut).await;
+        }
 
-        // Select the two futures.
-        futures::future::select(bluetooth_fut, timer_fut).await;
-        info!("Done waiting");
+        send_bluetooth_extended_advert(sd).await;
     }
 }
 
 static RTC: Forever<rtc::RTC<peripherals::RTC1>> = Forever::new();
 static ALARM: Forever<rtc::Alarm<peripherals::RTC1>> = Forever::new();
 
-#[entry]
-fn main() -> ! {
-    info!("Started");
-
-    // setup Timer
+fn setup_timer() -> &'static mut Alarm<peripherals::RTC1> {
+    // setup Timer do that we can use async delays
     unsafe { embassy_nrf::system::configure(Default::default()) };
     let irq = interrupt::take!(RTC1);
     irq.set_priority(interrupt::Priority::Level3); // levels 0-1 are reserved for the softdevice
@@ -116,9 +142,11 @@ fn main() -> ! {
     rtc.start();
     unsafe { embassy::time::set_clock(rtc) };
     let alarm = ALARM.put(rtc.alarm0());
+    alarm
+}
 
-    // config for softdevice
-    let config = nrf_softdevice::Config {
+fn configure_softdevice() -> nrf_softdevice::Config {
+    nrf_softdevice::Config {
         clock: Some(raw::nrf_clock_lf_cfg_t {
             source: raw::NRF_CLOCK_LF_SRC_XTAL as u8,
             rc_ctiv: 0,
@@ -150,8 +178,17 @@ fn main() -> ! {
             ),
         }),
         ..Default::default()
-    };
+    }
+}
 
+#[entry]
+fn main() -> ! {
+    info!("Started");
+
+    // used for delay timer. Needs to be called before enabling the softdevice
+    let alarm = setup_timer();
+
+    let config = configure_softdevice();
     let (sdp, _p) = take_peripherals();
     let sd = Softdevice::enable(sdp, &config);
 
