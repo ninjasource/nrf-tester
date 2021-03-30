@@ -245,6 +245,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c816f778ec2147f95990a606795fe9dcc82781bcd98e222675c4103c2d250ea1"
 
 [[package]]
+name = "defmt-rtt"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5dfca43cd6b33d2d9f4db9757101ce1044e9672cd7f412dfcc5c5f772243c3b"
+dependencies = [
+ "cortex-m 0.6.7",
+ "defmt",
+]
+
+[[package]]
 name = "derivative"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -258,7 +268,7 @@ dependencies = [
 [[package]]
 name = "embassy"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#2bcd1aaebbf255de1ded97356c107df5bea04e57"
+source = "git+https://github.com/embassy-rs/embassy#7094c4e619f7c5e4b4782bc5cbd14ac73ef9d4bf"
 dependencies = [
  "atomic-polyfill",
  "cortex-m 0.7.2",
@@ -272,7 +282,7 @@ dependencies = [
 [[package]]
 name = "embassy-extras"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#2bcd1aaebbf255de1ded97356c107df5bea04e57"
+source = "git+https://github.com/embassy-rs/embassy#7094c4e619f7c5e4b4782bc5cbd14ac73ef9d4bf"
 dependencies = [
  "cortex-m 0.7.2",
  "embassy",
@@ -282,7 +292,7 @@ dependencies = [
 [[package]]
 name = "embassy-macros"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#2bcd1aaebbf255de1ded97356c107df5bea04e57"
+source = "git+https://github.com/embassy-rs/embassy#7094c4e619f7c5e4b4782bc5cbd14ac73ef9d4bf"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -293,7 +303,7 @@ dependencies = [
 [[package]]
 name = "embassy-nrf"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#2bcd1aaebbf255de1ded97356c107df5bea04e57"
+source = "git+https://github.com/embassy-rs/embassy#7094c4e619f7c5e4b4782bc5cbd14ac73ef9d4bf"
 dependencies = [
  "cortex-m 0.7.2",
  "cortex-m-rt",
@@ -310,7 +320,7 @@ dependencies = [
 [[package]]
 name = "embassy-traits"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy#2bcd1aaebbf255de1ded97356c107df5bea04e57"
+source = "git+https://github.com/embassy-rs/embassy#7094c4e619f7c5e4b4782bc5cbd14ac73ef9d4bf"
 dependencies = [
  "defmt",
  "embedded-hal",
@@ -607,6 +617,7 @@ dependencies = [
  "cortex-m-rt",
  "cortex-m-rtic",
  "defmt",
+ "defmt-rtt",
  "embassy",
  "embassy-nrf",
  "embassy-traits",

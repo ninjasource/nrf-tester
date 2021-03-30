@@ -10,14 +10,18 @@ use setup::*;
 
 use core::mem;
 use cortex_m_rt::entry;
-use defmt::*;
+use defmt::{info, panic, unwrap};
+
 use embassy::executor::Executor;
 use embassy::time::{Duration, Timer};
 use embassy::util::Forever;
 use futures::pin_mut;
-
 use nrf_softdevice::ble::{gatt_server, peripheral};
 use nrf_softdevice::{raw, Softdevice};
+
+use embassy::interrupt::InterruptExt;
+use embassy::util::Steal;
+use embassy_nrf::{interrupt, peripherals, rtc};
 
 static EXECUTOR: Forever<Executor> = Forever::new();
 
@@ -96,10 +100,24 @@ async fn bluetooth_task(sd: &'static Softdevice) {
     }
 }
 
+static RTC: Forever<rtc::RTC<peripherals::RTC1>> = Forever::new();
+static ALARM: Forever<rtc::Alarm<peripherals::RTC1>> = Forever::new();
+
 #[entry]
 fn main() -> ! {
-    info!("Hello World!");
+    info!("Started");
 
+    // setup Timer
+    unsafe { embassy_nrf::system::configure(Default::default()) };
+    let irq = interrupt::take!(RTC1);
+    irq.set_priority(interrupt::Priority::Level3); // levels 0-1 are reserved for the softdevice
+    let rtc = unsafe { embassy_nrf::peripherals::RTC1::steal() };
+    let rtc = RTC.put(rtc::RTC::new(rtc, irq));
+    rtc.start();
+    unsafe { embassy::time::set_clock(rtc) };
+    let alarm = ALARM.put(rtc.alarm0());
+
+    // config for softdevice
     let config = nrf_softdevice::Config {
         clock: Some(raw::nrf_clock_lf_cfg_t {
             source: raw::NRF_CLOCK_LF_SRC_XTAL as u8,
@@ -138,6 +156,7 @@ fn main() -> ! {
     let sd = Softdevice::enable(sdp, &config);
 
     let executor = EXECUTOR.put(Executor::new());
+    executor.set_alarm(alarm);
     executor.run(|spawner| {
         unwrap!(spawner.spawn(softdevice_task(sd)));
         unwrap!(spawner.spawn(bluetooth_task(sd)));
