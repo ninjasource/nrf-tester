@@ -16,8 +16,8 @@ use defmt::{info, panic, unwrap};
 use embassy::executor::Executor;
 use embassy::time::{Duration, Timer};
 use embassy::util::Forever;
-use futures::pin_mut;
-use nrf_softdevice::ble::{gatt_server, peripheral, TxPower};
+use futures::{future::Either, pin_mut};
+use nrf_softdevice::ble::{gatt_server, peripheral, Connection, TxPower};
 use nrf_softdevice::{raw, Softdevice};
 
 use embassy::interrupt::InterruptExt;
@@ -40,7 +40,7 @@ struct FooService {
     foo: u16,
 }
 
-async fn run_bluetooth(sd: &'static Softdevice, server: &FooService) {
+async fn send_bluetooth_adverts(sd: &'static Softdevice) -> Connection {
     #[rustfmt::skip]
     let adv_data = &[
         0x02, 0x01, raw::BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE as u8,
@@ -52,32 +52,32 @@ async fn run_bluetooth(sd: &'static Softdevice, server: &FooService) {
         0x03, 0x03, 0x09, 0x18,
     ];
 
-    loop {
-        let config = peripheral::Config::default();
-        let adv = peripheral::ConnectableAdvertisement::ScannableUndirected {
-            adv_data,
-            scan_data,
-        };
+    let config = peripheral::Config::default();
+    let adv = peripheral::ConnectableAdvertisement::ScannableUndirected {
+        adv_data,
+        scan_data,
+    };
 
-        let conn = unwrap!(peripheral::advertise(sd, adv, &config).await);
+    let conn = unwrap!(peripheral::advertise(sd, adv, &config).await);
+    info!("advertising done!");
+    conn
+}
 
-        info!("advertising done!");
-
-        let res = gatt_server::run(&conn, server, |e| match e {
-            FooServiceEvent::FooWrite(val) => {
-                info!("wrote foo level: {}", val);
-                if let Err(e) = server.foo_notify(&conn, val + 1) {
-                    info!("send notification error: {:?}", e);
-                }
+async fn connect_bluetooth(conn: Connection, server: &FooService) {
+    let res = gatt_server::run(&conn, server, |e| match e {
+        FooServiceEvent::FooWrite(val) => {
+            info!("wrote foo level: {}", val);
+            if let Err(e) = server.foo_notify(&conn, val + 1) {
+                info!("send notification error: {:?}", e);
             }
-            FooServiceEvent::FooNotificationsEnabled => info!("notifications enabled"),
-            FooServiceEvent::FooNotificationsDisabled => info!("notifications disabled"),
-        })
-        .await;
-
-        if let Err(e) = res {
-            info!("gatt_server run exited with error: {:?}", e);
         }
+        FooServiceEvent::FooNotificationsEnabled => info!("notifications enabled"),
+        FooServiceEvent::FooNotificationsDisabled => info!("notifications disabled"),
+    })
+    .await;
+
+    if let Err(e) = res {
+        info!("gatt_server run exited with error: {:?}", e);
     }
 }
 
@@ -112,21 +112,26 @@ async fn bluetooth_task(sd: &'static Softdevice) {
     loop {
         info!("Sending standard connectible adverts");
         {
-            let bluetooth_fut = run_bluetooth(sd, &server);
+            let bluetooth_adverts_fut = send_bluetooth_adverts(sd);
 
-            let timer_fut = async {
+            let timer_to_stop_adverts_fut = async {
                 Timer::after(Duration::from_secs(10)).await;
-                info!("Extended advertising timer has ticked");
+                info!("Timer to stop advertising has ticked");
             };
 
-            pin_mut!(bluetooth_fut);
-            pin_mut!(timer_fut);
+            pin_mut!(bluetooth_adverts_fut);
+            pin_mut!(timer_to_stop_adverts_fut);
 
             // Select whichever future finishes first
-            futures::future::select(bluetooth_fut, timer_fut).await;
+            match futures::future::select(bluetooth_adverts_fut, timer_to_stop_adverts_fut).await {
+                Either::Left((conn, _)) => {
+                    connect_bluetooth(conn, &server).await;
+                }
+                Either::Right(_) => {
+                    send_bluetooth_extended_advert(sd).await;
+                }
+            }
         }
-
-        send_bluetooth_extended_advert(sd).await;
     }
 }
 
